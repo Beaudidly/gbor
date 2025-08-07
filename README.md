@@ -5,6 +5,21 @@
 
 A CBOR encoding/decoding library for Gleam.
 
+# Specification Support
+
+This library aims to support the majority of the CBOR specification (RFC 8949). The following table details the level of support for each major feature:
+
+| Feature | Supported | Notes |
+| :--- | :---: | :--- |
+| Integers | ✅ | Covers both positive (major type 0) and negative (major type 1) integers. |
+| Byte Strings | ✅ | Definite-length only (major type 2). |
+| Text Strings | ✅ | Definite-length only (major type 3). |
+| Arrays | ✅ | Definite-length only (major type 4). |
+| Maps | ✅ | Definite-length only (major type 5). |
+| Tags | ✅ | (major type 6). |
+| Simple Values & Floats | ✅ | Covers simple values, booleans, null, undefined, and floating-point numbers (major type 7). |
+| Indefinite-length Items | ❌ | Not supported for strings, byte strings, arrays, or maps. |
+
 # Installation
 ```sh
 gleam add gbor@1
