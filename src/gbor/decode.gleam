@@ -5,10 +5,13 @@ import gleam/bool
 import gleam/dynamic
 import gleam/dynamic/decode as gdd
 import gleam/erlang/atom
+import gleam/float
 import gleam/int
 import gleam/list
 import gleam/result
 import gleam/string
+import gleam/time/duration
+import gleam/time/timestamp
 
 import ieee_float as i
 
@@ -39,24 +42,29 @@ pub fn cbor_to_dynamic(cbor: g.CBOR) -> dynamic.Dynamic {
     g.CBUndefined -> dynamic.nil()
     g.CBBinary(v) -> dynamic.bit_array(v)
     g.CBTagged(tag, value) -> ffi_to_tagged(tag, cbor_to_dynamic(value))
+    g.CBTime(v) ->
+      ffi_to_tagged(
+        0,
+        dynamic.string(timestamp.to_rfc3339(v, duration.hours(0))),
+      )
   }
 }
 
 /// Decode a tagged CBOR value.
-/// 
+///
 /// Provided tag is the expected tag number for the value, and the decoder is run
 /// on the value corresponding to the tag.
-/// 
+///
 /// For example, for a CBOR value with a tag number of `0`, the expected data item
 /// is a text string representing a standard time string, so one would call:
-/// 
+///
 /// ```gleam
 /// import gleam/dynamic/decode as gdd
 /// tagged_decoder(0, gdd.string, "")
 /// ```
-/// 
+///
 /// Reference: [RFC 8949 : 3.4 Tagging of Items](https://www.rfc-editor.org/rfc/rfc8949.html#name-tagging-of-items)
-/// 
+///
 pub fn tagged_decoder(
   expected_tag: Int,
   decoder: gdd.Decoder(a),
@@ -78,11 +86,11 @@ pub fn tagged_decoder(
 }
 
 /// Decode a CBOR value from a bit array
-/// 
+///
 /// This function is the main entry point for decoding CBOR data into Gleam types.
-/// 
+///
 /// It takes a bit array and returns a result containing the decoded CBOR value
-/// 
+///
 pub fn from_bit_array(data: BitArray) -> Result(g.CBOR, CborDecodeError) {
   case decode_helper(data) {
     Ok(#(v, <<>>)) -> Ok(v)
@@ -392,8 +400,53 @@ fn decode_tagged(
   })
 
   use #(tag_value, rest) <- result.try(decode_helper(rest))
+  case tag_num {
+    0 | 1 | 2 | 3 ->
+      case decode_low_tag(tag_num, tag_value) {
+        Ok(val) -> Ok(#(val, rest))
+        Error(Nil) -> Error(MajorTypeError(6))
+      }
+    _ -> {
+      Ok(#(g.CBTagged(tag_num, tag_value), rest))
+    }
+  }
+}
 
-  Ok(#(g.CBTagged(tag_num, tag_value), rest))
+fn decode_low_tag(min: Int, value: g.CBOR) -> Result(g.CBOR, Nil) {
+  case min, value {
+    0, g.CBString(datetime) -> decode_datetime(datetime)
+    1, g.CBInt(time) -> Ok(g.CBTime(timestamp.from_unix_seconds(time)))
+    1, g.CBFloat(time) -> Ok(g.CBTime(decode_timestamp(time)))
+    2, g.CBBinary(value) -> {
+      let size = bit_array.byte_size(value)
+      case value {
+        <<res:unsigned-int-size(size)-unit(8)>> -> Ok(g.CBInt(res))
+        _ -> Error(Nil)
+      }
+    }
+    3, g.CBBinary(value) ->
+      case decode_low_tag(2, g.CBBinary(value)) {
+        Ok(g.CBInt(bigint)) -> Ok(g.CBInt({ -bigint } - 1))
+        u -> u
+      }
+    _, _ -> Error(Nil)
+  }
+}
+
+fn decode_datetime(dt: String) -> Result(g.CBOR, Nil) {
+  case timestamp.parse_rfc3339(dt) {
+    Ok(dt) -> Ok(g.CBTime(dt))
+    _ -> Error(Nil)
+  }
+}
+
+fn decode_timestamp(ts: Float) -> timestamp.Timestamp {
+  let seconds = float.floor(ts)
+  let nano = { ts -. seconds } *. 1.0e9
+  timestamp.from_unix_seconds_and_nanoseconds(
+    float.truncate(seconds),
+    float.truncate(nano),
+  )
 }
 
 @external(erlang, "erl_gbor", "to_tagged")

@@ -3,17 +3,17 @@
 //// Negative values
 //// Special values (Infinity, NaN)
 
+import gbor as g
+import gbor/decode as d
+import gbor/encode as e
 import gleam/bit_array
 import gleam/bool
 import gleam/dynamic/decode as gdd
 import gleam/list
 import gleam/result
 import gleam/string
+import gleam/time/timestamp
 import gleeunit
-
-import gbor as g
-import gbor/decode as d
-import gbor/encode as e
 
 pub fn main() {
   gleeunit.main()
@@ -184,28 +184,27 @@ pub fn decode_simple_test() {
 }
 
 pub fn decode_taggded_test() {
-  let assert Ok(payload) = bit_array.base16_decode("010000000000000000")
   let assert Ok(_) =
-    round_trip(g.CBTagged(2, g.CBBinary(payload)), "c249010000000000000000")
+    round_trip(g.CBInt(18_446_744_073_709_551_616), "c249010000000000000000")
 
-  let assert Ok(payload) = bit_array.base16_decode("010000000000000000")
   let assert Ok(_) =
-    round_trip(g.CBTagged(3, g.CBBinary(payload)), "c349010000000000000000")
+    round_trip(g.CBInt(-18_446_744_073_709_551_617), "c349010000000000000000")
 
+  let assert Ok(timestamp) = timestamp.parse_rfc3339("2013-03-21T20:04:00Z")
   let assert Ok(_) =
     round_trip(
-      g.CBTagged(0, g.CBString("2013-03-21T20:04:00Z")),
+      g.CBTime(timestamp),
       "c074323031332d30332d32315432303a30343a30305a",
     )
 
-  let assert Ok(_) =
-    round_trip(g.CBTagged(1, g.CBInt(1_363_896_240)), "c11a514b67b0")
+  // CBTagged(1, CBInt(1363896240)) <=>
+  // "c11a514b67b0" <=>
+  // "2013-03-21T20:04:00Z"
+  let assert Ok(_) = round_trip(g.CBTime(timestamp), "c11a514b67b0")
 
-  let assert Ok(_) =
-    round_trip(
-      g.CBTagged(1, g.CBFloat(1_363_896_240.5)),
-      "c1fb41d452d9ec200000",
-    )
+  // CBTagged(1, CBFloat(1363896240.5)) <=> "c1fb41d452d9ec200000"
+  let assert Ok(timestamp) = timestamp.parse_rfc3339("2013-03-21T20:04:00.50Z")
+  let assert Ok(_) = round_trip(g.CBTime(timestamp), "c1fb41d452d9ec200000")
 
   let assert Ok(_) =
     round_trip(
@@ -283,8 +282,9 @@ fn round_trip(expected: g.CBOR, hex: String) -> Result(Nil, String) {
     ),
   )
 
+  // Time is always encoded to tag 0, so skip when decoded from tag 1
   let assert Ok(encoded) = e.to_bit_array(v)
-  case encoded == binary {
+  case encoded == binary || string.starts_with(string.lowercase(hex), "c1") {
     True -> Ok(Nil)
     False -> {
       let encoded_hex = bit_array.base16_encode(encoded)

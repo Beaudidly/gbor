@@ -7,6 +7,8 @@
 /// > **Note**: This type may become opaque in future major types as we evaluate
 /// > the API needs for this package.
 ///
+import gleam/time/timestamp.{type Timestamp}
+
 pub type CBOR {
   CBInt(Int)
   CBString(String)
@@ -18,6 +20,7 @@ pub type CBOR {
   CBUndefined
   CBBinary(BitArray)
   CBTagged(Int, CBOR)
+  CBTime(Timestamp)
 }
 
 // Placeholder for LSP

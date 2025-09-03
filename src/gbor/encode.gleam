@@ -1,9 +1,12 @@
 //// Module where we can find the functions used for getting the CBOR binary representation of a value
 
 import gleam/bit_array
+import gleam/int
 import gleam/list
 import gleam/result
 import gleam/string
+import gleam/time/duration
+import gleam/time/timestamp
 
 import ieee_float as i
 
@@ -28,6 +31,11 @@ pub fn to_bit_array(value: g.CBOR) -> Result(BitArray, EncodeError) {
     g.CBTagged(t, v) -> tagged_encode(t, v)
     g.CBNull -> Ok(null_encode())
     g.CBUndefined -> Ok(undefined_encode())
+    g.CBTime(v) ->
+      to_bit_array(g.CBTagged(
+        0,
+        g.CBString(timestamp.to_rfc3339(v, duration.hours(0))),
+      ))
   }
 }
 
@@ -39,7 +47,15 @@ fn uint_encode(value: Int) -> Result(BitArray, EncodeError) {
     v if v < 0x10000 -> Ok(<<0:3, 25:5, v:16>>)
     v if v < 0x100000000 -> Ok(<<0:3, 26:5, v:32>>)
     v if v < 0x10000000000000000 -> Ok(<<0:3, 27:5, v:64>>)
-    v -> Error(EncodeError("Int value too large: " <> string.inspect(v)))
+    v -> {
+      let l = string.length(int.to_base16(v))
+      let l = l - { l / 2 }
+      case l < 0b100000 {
+        True -> Ok(<<6:3, 2:5, 2:3, l:5, v:size(l)-unit(8)>>)
+        False ->
+          Error(EncodeError("Int value too large: " <> string.inspect(v)))
+      }
+    }
   }
 }
 
@@ -52,7 +68,17 @@ fn int_encode(value: Int) -> Result(BitArray, EncodeError) {
     v if v < 0x10000 -> Ok(<<1:3, 25:5, v:16>>)
     v if v < 0x100000000 -> Ok(<<1:3, 26:5, v:32>>)
     v if v < 0x10000000000000000 -> Ok(<<1:3, 27:5, v:64>>)
-    v -> Error(EncodeError("Int value too large: " <> string.inspect(v)))
+    v -> {
+      let l = string.length(int.to_base16(v))
+      let l = l - { l / 2 }
+      case l < 0b100000 {
+        True -> Ok(<<6:3, 3:5, 2:3, l:5, v:size(l)-unit(8)>>)
+        False ->
+          Error(EncodeError(
+            "Absolute Int value too large: " <> string.inspect(v),
+          ))
+      }
+    }
   }
 }
 
